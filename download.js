@@ -3,7 +3,8 @@ var request = limit(require('request')).to(1).per(100); // as per reddit api
 var request_no_limit = require('request') // to PUT on couch server
 var fs = require('fs');
 var async = require('async');
-var couch_server = 'http://couchdb.crackcr.com'
+
+var couch_server = 'http://reddit:reddit@localhost:5984'
 var dbname = 'reddit'
 
 function make_url(subreddit) {
@@ -32,12 +33,18 @@ function save_to_file(id, obj) {
 }
 
 function save_to_couchdb(id, obj) {
+	console.log(make_couch_url(id))
 	var options = {
 		uri: make_couch_url(id),
+		headers: {
+			"Content-Type": "application/json"
+		},
 		method: 'PUT',
-		json: obj
+		json: obj,
+
 	}
 	request_no_limit(options, function(error, response, body) {
+		if(error) {console.log(error); return;}
 		  if (!error && response.statusCode == 200) {
 			console.log(body.id) // Print the shortened url.
 		  }
@@ -45,7 +52,7 @@ function save_to_couchdb(id, obj) {
 }
 
 function save_json(id, obj) {
-	save_to_file(id, obj)
+	save_to_couchdb(id, obj)
 }
 
 function get_utc_time() {
