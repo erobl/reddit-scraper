@@ -1,5 +1,5 @@
 var limit = require('simple-rate-limiter')
-var request = limit(require('request')).to(30).per(60); // as per reddit api
+var request = limit(require('request')).to(1).per(100); // as per reddit api
 var request_no_limit = require('request') // to PUT on couch server
 var fs = require('fs');
 var async = require('async');
@@ -33,8 +33,8 @@ function save_to_file(id, obj) {
 
 function save_to_couchdb(id, obj) {
 	var options = {
-		uri: make_couch_url(id)
-		method: 'PUT'
+		uri: make_couch_url(id),
+		method: 'PUT',
 		json: obj
 	}
 	request_no_limit(options, function(error, response, body) {
