@@ -1,7 +1,10 @@
 var limit = require('simple-rate-limiter')
 var request = limit(require('request')).to(30).per(60); // as per reddit api
+var request_no_limit = require('request') // to PUT on couch server
 var fs = require('fs');
 var async = require('async');
+var couch_server = 'http://couchdb.crackcr.com'
+var dbname = 'reddit'
 
 function make_url(subreddit) {
 	return "https://www.reddit.com" + subreddit + "/top.json"
@@ -16,12 +19,33 @@ function make_user_url(user) {
 	return "https://www.reddit.com/user/" + user + "/about.json"
 }
 
-function save_json(id, obj) {
-	var string = JSON.stringify(obj)
+function make_couch_url(docname) {
+	return couch_server + "/" + dbname + "/" +  docname
+}
+
+function save_to_file(id, obj) {
+		var string = JSON.stringify(obj)
 	fs.writeFile("json/"+id+".json", string, function(err) {
 		if(err) {return console.log(err);}
 	})
 	console.log("wrote file " + id + ".json")
+}
+
+function save_to_couchdb(id, obj) {
+	var options = {
+		uri: make_couch_url(id)
+		method: 'PUT'
+		json: obj
+	}
+	request_no_limit(options, function(error, response, body) {
+		  if (!error && response.statusCode == 200) {
+			console.log(body.id) // Print the shortened url.
+		  }
+	})
+}
+
+function save_json(id, obj) {
+	save_to_file(id, obj)
 }
 
 function get_utc_time() {
