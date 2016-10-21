@@ -1,16 +1,16 @@
 var request = require('request');
 var fs = require('fs')
 
-function makeurl(subreddit) {
+function make_url(subreddit) {
 	return "https://www.reddit.com" + subreddit + "/top.json"
 }
 
-function makecommenturl(subreddit,id) {
+function make_comment_url(subreddit,id) {
 	return "https://www.reddit.com" + subreddit + "/comments/" + id + ".json"
 
 }
 
-function makeuserurl(user) {
+function make_user_url(user) {
 	return "https://www.reddit.com/user/" + user + "/about.json"
 }
 
@@ -22,8 +22,45 @@ function save_json(id, obj) {
 	console.log("wrote file " + id + ".json")
 }
 
+function get_utc_time() {
+	// we get the current utc time
+	var d = new Date()
+	var utc = Math.floor(d.getTime()/1000)
+
+	return utc
+}
+
+function format_comment(comment, post, subreddit) {
+	var utc = get_utc_time()
+
+	var new_comment = { 
+		comentario: comment.data.body,
+		post: post,
+		categoria: subreddit,
+		tipo: "comentario",
+		autor: comment.data.author,
+		puntaje: comment.data.score,
+		comentarios: [],
+		creadoEn: comment.data.created_utc,
+		tomadoEn: utc,
+		id: comment.data.id
+	}
+
+	try {
+		var replies = comment.data.replies.data.children
+
+		for(var i = 0; i < replies.length; i++) {
+			new_comment.comentarios.push(format_comment(replies[i]))
+		}
+
+		return new_comment
+	} catch (err) {
+		return new_comment
+	}
+}
+
 function parse_comments(post_obj,subreddit) {
-	var requrl = makecommenturl(subreddit,post_obj.id)
+	var requrl = make_comment_url(subreddit,post_obj.id)
 	var properties = {}
 
 	request( 
@@ -43,12 +80,18 @@ function parse_comments(post_obj,subreddit) {
 
 				//post_obj esta listo
 				save_json(post_obj.id, post_obj)
+
+				var commentdata = readjson[1].data.children
+				for(var i = 0; i < commentdata.length; i++) {
+						var new_comment = format_comment(commentdata[i])
+						save_json(new_comment.id, new_comment)
+				}
 			}
 	)
 }
 
 function parse_post_author(post_obj, user) {
-	var requrl = makeuserurl(user)
+	var requrl = make_user_url(user)
 	var properties = {}
 
 	request(
@@ -56,8 +99,7 @@ function parse_post_author(post_obj, user) {
 		function(err,response,body) {
 			if(err) { console.log("parse_post_author: " + err); return; } 
 			// we get the current utc time
-			var d = new Date()
-			var utc = d.getTime()
+			var utc = get_utc_time()
 
 			var readjson = JSON.parse(body)
 			
@@ -82,8 +124,7 @@ function parse_post_author(post_obj, user) {
 
 function parse_post(post, subreddit) {
 	// we get the current utc time
-	var d = new Date()
-	var utc = d.getTime()
+	var utc = get_utc_time()
 
 	// we start making the post object here
 	var post_obj = {
@@ -100,10 +141,10 @@ function parse_post(post, subreddit) {
 	parse_post_author(post_obj, post.data.author)
 }
 
-function requesturl(subreddit, after, n) {
+function request_url(subreddit, after, n) {
 	if(n < 0) { return; }
 	//first we get each post from each subreddit
-	var requrl = makeurl(subreddit)
+	var requrl = make_url(subreddit)
 	var properties = {"sort":"top", "t":"day", "after":after}
 	
 	request(
@@ -119,13 +160,13 @@ function requesturl(subreddit, after, n) {
 				parse_post(posts[i],subreddit)
 			}
 
-			requesturl(subreddit, readjson.data.after, n-1)
+			request_url(subreddit, readjson.data.after, n-1)
 		}
 	)
 	
 }
 
-requesturl("/r/politics", "", 10)
+request_url("/r/politics", "", 10)
 
 
 
