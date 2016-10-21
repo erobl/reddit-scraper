@@ -1,4 +1,5 @@
-var request = require('request');
+var limit = require('simple-rate-limiter')
+var request = limit(require('request')).to(30).per(60); // as per reddit api
 var fs = require('fs');
 var async = require('async');
 
