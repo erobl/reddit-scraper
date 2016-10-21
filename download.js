@@ -1,5 +1,6 @@
 var request = require('request');
-var fs = require('fs')
+var fs = require('fs');
+var async = require('async');
 
 function make_url(subreddit) {
 	return "https://www.reddit.com" + subreddit + "/top.json"
@@ -30,6 +31,71 @@ function get_utc_time() {
 	return utc
 }
 
+function replace_authors(comments, dict) {
+	if(comments == []) {return [];}
+
+	for(var i = 0; i < comments.length; i++) {
+		comments[i].comentarios = replace_authors(comments[i].comentarios, dict)
+	}
+
+	for(var i = 0; i < comments.length; i++) {
+		comments[i].autor = dict[comments[i].autor]
+	}
+
+	return comments
+}
+
+function get_authors(comments) {
+	if(comments == []){return [];}
+
+	var author_list = comments.map(function(comment) {return comment.autor;})
+
+	for(var i = 0; i < comments.length; i++) {
+		author_list.concat(get_authors(comments[i].comentarios))
+	}
+
+	var unique_author_list = author_list.filter(function(elem, pos) {
+	    return author_list.indexOf(elem) == pos;
+	}).filter(function(elem){return elem != undefined;})
+
+	return unique_author_list
+}
+
+function download_authors(author, callback) {
+	if(author == undefined) {return;}
+	var requrl = make_user_url(author)
+	var properties = {}
+
+	request(
+		{url:requrl, qs:properties},
+		function(err,response,body) {
+			// we get the current utc time
+			if(err){console.log(err); console.log(author); return;}
+
+			var utc = get_utc_time()
+
+			try {
+			var readjson = JSON.parse(body)
+
+			if("error" in readjson) {console.log("404 Error: " + author); return;}
+
+			var author = {
+				nombre: readjson.data.name,
+				PuntajeComentario: readjson.data.comment_karma,
+				PuntajePost: readjson.data.link_karma,
+				emailVerificado: readjson.data.has_verified_email,
+				creadoEn: readjson.data.created_utc,
+				TomadoEn: utc
+			}
+
+			callback(err, author)
+			} catch (err) {
+				console.log(author)
+			}
+		}
+	)
+}
+
 function format_comment(comment, post, subreddit) {
 	var utc = get_utc_time()
 
@@ -50,7 +116,7 @@ function format_comment(comment, post, subreddit) {
 		var replies = comment.data.replies.data.children
 
 		for(var i = 0; i < replies.length; i++) {
-			new_comment.comentarios.push(format_comment(replies[i]))
+			new_comment.comentarios.push(format_comment(replies[i], post, subreddit))
 		}
 
 		return new_comment
@@ -82,10 +148,26 @@ function parse_comments(post_obj,subreddit) {
 				save_json(post_obj.id, post_obj)
 
 				var commentdata = readjson[1].data.children
+				var new_comment_array = []
 				for(var i = 0; i < commentdata.length; i++) {
-						var new_comment = format_comment(commentdata[i])
-						save_json(new_comment.id, new_comment)
+						new_comment_array.push(format_comment(commentdata[i],post_obj.id,subreddit))
 				}
+
+				var author_list = get_authors(new_comment_array)
+
+				async.map(author_list, download_authors, function(err, authors) {
+					var dict = {}
+					for(var i = 0; i < authors.length; i++) {
+						dict[authors[i].nombre] = authors[i]
+					}
+
+					replaced_comments = replace_authors(new_comment_array,dict)
+
+					for(var i = 0; i < replaced_comments.length; i++) {
+						save_json(replaced_comments[i].id,replaced_comments[i])
+					}
+				})
+
 			}
 	)
 }
@@ -118,8 +200,6 @@ function parse_post_author(post_obj, user) {
 			
 		}
 	)
-		
-
 }
 
 function parse_post(post, subreddit) {
