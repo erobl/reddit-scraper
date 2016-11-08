@@ -29,11 +29,9 @@ function save_to_file(id, obj) {
 	fs.writeFile("json/"+id+".json", string, function(err) {
 		if(err) {return console.log(err);}
 	})
-	console.log("wrote file " + id + ".json")
 }
 
 function save_to_couchdb(id, obj) {
-	console.log(make_couch_url(id))
 	var options = {
 		uri: make_couch_url(id),
 		headers: {
@@ -46,7 +44,6 @@ function save_to_couchdb(id, obj) {
 	request_no_limit(options, function(error, response, body) {
 		if(error) {console.log(error); return;}
 		  if (!error && response.statusCode == 200) {
-			console.log(body.id) // Print the shortened url.
 		  }
 	})
 }
@@ -167,8 +164,9 @@ function parse_comments(post_obj,subreddit) {
 				if(err) { console.log("parse_comments: " + err); console.log(requrl); return; } 
 				var readjson = JSON.parse(body)
 				
-				var postdata = readjson[0].data
-				if(post_obj.tipo === "post/link") {
+				var postdata = readjson[0].data.children[0].data
+				if(post_obj.tipo == "post/link") {
+					console.log(postdata.url)
 					post_obj.Link = postdata.url
 				} else {
 					post_obj.Descripcion = postdata.selftext
@@ -216,7 +214,7 @@ function parse_post_author(post_obj, user) {
 			var utc = get_utc_time()
 
 			var readjson = JSON.parse(body)
-			
+			try {
 			var author = {
 				nombre: readjson.data.name,
 				PuntajeComentario: readjson.data.comment_karma,
@@ -229,7 +227,11 @@ function parse_post_author(post_obj, user) {
 			post_obj.author = author
 			
 			parse_comments(post_obj, post_obj.categoria)
-			
+			} catch (err) {
+				console.log(user)
+				post_obj.author = "undefined"
+				parse_comments(post_obj,post_obj.categoria)
+			}
 		}
 	)
 }
@@ -278,7 +280,10 @@ function request_url(subreddit, after, n) {
 	
 }
 
-request_url("/r/politics", "", 10)
+subreddits = ["/r/politics", "/r/the_donald", "/r/hillaryforamerica", "/r/hillaryforprison", "/r/asktrumpsupporters", "/r/donald_trump", "/r/drumpf", "/r/politicalrevolution", "/r/garyjohnson", "/r/jillstein", "/r/POLITIC", "/r/Ask_Politics"]
 
+for(var i = 0; i < subreddits.length; i++) {
+	request_url(subreddits[i], "", 10)
+}
 
 
