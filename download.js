@@ -243,44 +243,64 @@ function format_comment(comment, post, subreddit) {
 }
 
 function parse_comments(post_obj,subreddit) {
+	/* Descrption: gets a post object and a subreddit and gets the comments from a post
+	 * prepares the object with the information that was missing form the front page listing
+	 * and then starts to parse the comments
+	 * Input: 
+	 *	post_obj: a post object 
+	 *	subreddit: the subreddit where it comes from
+	 * Output: none
+	 */
+	// we get the url of the comment
 	var requrl = make_comment_url(subreddit,post_obj.id)
 	var properties = {}
-
+	// we make the request to reddit
 	request( 
 		{url: requrl, qs:properties}, 
 			function(err,response,body) {
+				// if the response fails, log it and continue
 				if(err) { console.log("parse_comments: " + err); console.log(requrl); return; } 
+				// parse the json
 				var readjson = JSON.parse(body)
 				
+				// get the data from the actual post
 				var postdata = readjson[0].data.children[0].data
 				if(post_obj.tipo == "post/link") {
-					console.log(postdata.url)
+					// if it's a link we include the url on the post object
 					post_obj.Link = postdata.url
 				} else {
+					// if it's a self post, save the text
 					post_obj.Descripcion = postdata.selftext
 				}
-
+				
+				//add percentage of positive posts
 				post_obj.PorcentajePositivo = postdata.upvote_ratio
 
-				//post_obj esta listo
+				//post_obj is ready
 				save_json(post_obj.id, post_obj)
 
+				//get the comment data from reddit
 				var commentdata = readjson[1].data.children
 				var new_comment_array = []
 				for(var i = 0; i < commentdata.length; i++) {
+						// format each comment recursively
 						new_comment_array.push(format_comment(commentdata[i],post_obj.id,subreddit))
 				}
 
+				// get a list of all the authors involved in the comment thread
 				var author_list = get_authors(new_comment_array)
 
+				// use the async module to request a list of the authors
 				async.map(author_list, download_authors, function(err, authors) {
+					// fill up a dictionary with th requested author
 					var dict = {}
 					for(var i = 0; i < authors.length; i++) {
 						dict[authors[i].nombre] = authors[i]
 					}
-
+					// replace each author placeholder name for the author object
 					replaced_comments = replace_authors(new_comment_array,dict)
-
+					
+					// save each comment thread to couchdb or a file
 					for(var i = 0; i < replaced_comments.length; i++) {
 						save_json(replaced_comments[i].id,replaced_comments[i])
 					}
@@ -291,6 +311,14 @@ function parse_comments(post_obj,subreddit) {
 }
 
 function parse_post_author(post_obj, user) {
+	/* Descrption: takes a post object and a user 
+	 * gets the user information and stores it in the post object
+	 * When it's done it calls the results into the parse_comments function
+	 * Input:
+	 * 	post_obj: an object representing the data from the post
+	 * 	user: a user who has the post
+	 * Output: none
+	 */
 	var requrl = make_user_url(user)
 	var properties = {}
 
@@ -300,9 +328,12 @@ function parse_post_author(post_obj, user) {
 			if(err) { console.log("parse_post_author: " + err); return; } 
 			// we get the current utc time
 			var utc = get_utc_time()
-
+			
+			// parse the json
 			var readjson = JSON.parse(body)
+			// try to use the parsed object
 			try {
+			//create the author object
 			var author = {
 				nombre: readjson.data.name,
 				PuntajeComentario: readjson.data.comment_karma,
@@ -311,11 +342,12 @@ function parse_post_author(post_obj, user) {
 				creadoEn: readjson.data.created_utc,
 				TomadoEn: utc
 			}
-
+			// add it to the post object
 			post_obj.author = author
-			
+			// pass it onto parse_comments
 			parse_comments(post_obj, post_obj.categoria)
 			} catch (err) {
+				// if it can't parse the object, set it as undefined and parse the comments anyway
 				console.log(user)
 				post_obj.author = "undefined"
 				parse_comments(post_obj,post_obj.categoria)
@@ -325,6 +357,12 @@ function parse_post_author(post_obj, user) {
 }
 
 function parse_post(post, subreddit) {
+	/* Description: Takes the data from a post from the reddit API
+	 * and builds a post object, then passes it onto parse_post_author
+	 * Inputs: 
+	 * 	post: the post object from the reddit API
+	 * 	subreddit: the name of the subreddit the post is at
+	 */
 	// we get the current utc time
 	var utc = get_utc_time()
 
@@ -344,11 +382,23 @@ function parse_post(post, subreddit) {
 }
 
 function request_url(subreddit, after, n) {
+	/* Descrption: Takes a subreddit name and scrapes the page 
+	 * identified by the "after" string. If the string is empty
+	 * it scrapes the first page. It then calls the next page recursively
+	 * until n = 0.
+	 *
+	 * Input: 
+	 * 	subreddit: the name of the subreddit
+	 *	after: the string that identifies the current page in the reddit API
+	 *	n: the amount of recursions left
+	 * Output: none
+	 */
 	if(n < 0) { return; }
 	//first we get each post from each subreddit
 	var requrl = make_url(subreddit)
 	var properties = {"sort":"top", "t":"day", "after":after}
 	
+	// we make the request
 	request(
 	{url:requrl, qs:properties},
 		function(err,response,body) {
@@ -361,15 +411,17 @@ function request_url(subreddit, after, n) {
 			for(var i = 0; i < posts.length; i++) {
 				parse_post(posts[i],subreddit)
 			}
-
+			// recursively call the next page
 			request_url(subreddit, readjson.data.after, n-1)
 		}
 	)
 	
 }
 
+// we define a list of subreddits to scrape
 subreddits = ["/r/politics", "/r/the_donald", "/r/hillaryforamerica", "/r/hillaryforprison", "/r/asktrumpsupporters", "/r/donald_trump", "/r/drumpf", "/r/politicalrevolution", "/r/garyjohnson", "/r/jillstein", "/r/POLITIC", "/r/Ask_Politics"]
 
+// then scrape all the subreddits
 for(var i = 0; i < subreddits.length; i++) {
 	request_url(subreddits[i], "", 10)
 }
