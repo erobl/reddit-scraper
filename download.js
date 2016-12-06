@@ -8,31 +8,62 @@ var couch_server = 'http://reddit:reddit@localhost:5984'
 var dbname = 'reddit'
 
 function make_url(subreddit) {
+	/* Description: Makes a url for a given subreddit
+	 * Inputs: subreddit: subreddit name
+	 * Outputs: Url to download the top posts from that subreddit
+	 */
 	return "https://www.reddit.com" + subreddit + "/top.json"
 }
 
 function make_comment_url(subreddit,id) {
+	/* Description: Makes a url to get the comments from a thread
+	 * Inputs: 
+	 * 	subreddit: name of the subreddit
+	 * 	id: thread id
+	 * Outputs: The url where the comments are located
+	 */
 	return "https://www.reddit.com" + subreddit + "/comments/" + id + ".json"
 
 }
 
 function make_user_url(user) {
+	/* Description: Makes a url to get the user information from the reddit API
+	 * Inputs: user: username of the user whose information is obtained
+	 * Outputs: Url where that is located in the reddit API
+	 */
 	return "https://www.reddit.com/user/" + user + "/about.json"
 }
 
 function make_couch_url(docname) {
+	/* Description: Makes a url to point to the couchdb instalation 
+	 * and the document that's going to be pointed at
+	 * Inputs: docname: the name of the document
+	 * Uses the global variables couch_server and dbname
+	 */
 	return couch_server + "/" + dbname + "/" +  docname
 }
 
 function save_to_file(id, obj) {
-		var string = JSON.stringify(obj)
+	/* Description: Saves a javascript object to a .json file
+	 * Inputs: 
+	 * 	id: the name of the json file
+	 *	obj: object that will be saved
+	 * Outputs: none
+	 */
+	var string = JSON.stringify(obj) // turns object into string
 	fs.writeFile("json/"+id+".json", string, function(err) {
-		if(err) {return console.log(err);}
+		if(err) {return console.log(err);} //asyncronously saves it to disc
 	})
 }
 
 function save_to_couchdb(id, obj) {
-	var options = {
+	/* Description: Saves a javascript object to the couchdb database
+	 * Inputs: 
+	 * 	id: the name of the json file
+	 * 	obj: object that will be saved
+	 * Outputs: none
+	 */
+	var options = { // metadata about the http POST request
 		uri: make_couch_url(id),
 		headers: {
 			"Content-Type": "application/json"
@@ -40,20 +71,36 @@ function save_to_couchdb(id, obj) {
 		method: 'PUT',
 		json: obj,
 
-	}
-	request_no_limit(options, function(error, response, body) {
+	} 
+	// POST to the couchdb instance
+	// We use request_no_limit when interacting with couchDB 
+	// as we do not have a limit to how many times we can
+	// interact with it.
+	request_no_limit(options, function(error, response, body) { 
 		if(error) {console.log(error); return;}
 		  if (!error && response.statusCode == 200) {
 		  }
-	})
+	}) 
 }
 
 function save_json(id, obj) {
+	/* Description: a simple intermediary method to swap out
+	 * between saving to a file or to couchdb. Saves a javascript
+	 * object to either of them.
+	 * Inputs: 
+	 * 	id: the name of the json file
+	 * 	obj: object that will be saved
+	 * Outputs: none
+	 */
 	save_to_couchdb(id, obj)
 }
 
 function get_utc_time() {
-	// we get the current utc time
+	/* Description: gets current UTC time
+	 * Inputs: none
+	 * Outputs: the current time in UTC
+	 */
+	// we get the current utc time and format it according to reddit's format
 	var d = new Date()
 	var utc = Math.floor(d.getTime()/1000)
 
@@ -61,6 +108,15 @@ function get_utc_time() {
 }
 
 function replace_authors(comments, dict) {
+	/* Description: recursively replaces the author atribute that has the name
+	 * with an author atribute which has all the information.
+	 * Inputs:
+	 * 	comments: a comment object, each comment object has a list of comment objects.
+	 *	dict: a dictionary that contains the name of the author as the key and the 
+	 *		author object as the value
+	 * Outputs: comments object where the author is replaced with an author object with
+	 * 	information about the author
+	 */
 	if(comments == []) {return [];}
 
 	for(var i = 0; i < comments.length; i++) {
@@ -75,6 +131,12 @@ function replace_authors(comments, dict) {
 }
 
 function get_authors(comments) {
+	/* Description: Takes a comment thread and gets a list of all the authors involved on it,
+	 * 	ignoring any repeated authors.
+	 * Inputs:
+	 * 	comments: a comment object
+	 * Outputs: a list of the username of the authors in that thread of comments
+	 */
 	if(comments == []){return [];}
 
 	var author_list = comments.map(function(comment) {return comment.autor;})
@@ -91,6 +153,14 @@ function get_authors(comments) {
 }
 
 function download_authors(author, callback) {
+	/* Description: Takes a user name, requests reddit for their information
+	 * 	and asyncronously feeds it an anonymous function which creates 
+	 * 	the author object and feeds it to the callback function
+	 * Inputs: 
+	 * 	author: the list of user names which will be requested
+	 *	callback: the function to be called when the author object is constructed
+	 * Outputs: none
+	 */
 	if(author == undefined) {return;}
 	var requrl = make_user_url(author)
 	var properties = {}
@@ -98,16 +168,21 @@ function download_authors(author, callback) {
 	request(
 		{url:requrl, qs:properties},
 		function(err,response,body) {
-			// we get the current utc time
+			// if the request fails we log it
 			if(err){console.log(err); console.log(author); return;}
 
+			// we get the current utc time
 			var utc = get_utc_time()
 
+			// try catch because deleted authors crash the program
 			try {
+			// parse the object from reddit
 			var readjson = JSON.parse(body)
-
+			
+			// if it can't be parsed, print an error and stop
 			if("error" in readjson) {console.log("404 Error: " + author); return;}
 
+			// construct the object
 			var author = {
 				nombre: readjson.data.name,
 				PuntajeComentario: readjson.data.comment_karma,
@@ -117,6 +192,7 @@ function download_authors(author, callback) {
 				TomadoEn: utc
 			}
 
+			// feed it to the callback function
 			callback(err, author)
 			} catch (err) {
 				console.log(author)
@@ -126,8 +202,17 @@ function download_authors(author, callback) {
 }
 
 function format_comment(comment, post, subreddit) {
+	/* Descrption: Formats a comment object from the format in the reddit API to 
+	 * 	the format which will be saved in the couchDB server.
+	 * Inputs: 
+	 * 	comment: the comment object from the reddit API
+	 *	post: the post from which the comments comes from
+	 *	subreddit: the subreddit from which the comment comes from
+	 * Outputs: the comment formatted in the shape of the model
+	 */
 	var utc = get_utc_time()
-
+	
+	// format current comment
 	var new_comment = { 
 		comentario: comment.data.body,
 		post: post,
@@ -142,9 +227,12 @@ function format_comment(comment, post, subreddit) {
 	}
 
 	try {
+		// get the list of replies to that comment
 		var replies = comment.data.replies.data.children
 
 		for(var i = 0; i < replies.length; i++) {
+			// for each of the child comments we format them and add them to the list
+			// of child coments
 			new_comment.comentarios.push(format_comment(replies[i], post, subreddit))
 		}
 
